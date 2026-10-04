@@ -2,8 +2,9 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useProjectOptional } from '@/hooks/use-project';
 import { useSearch } from '@/lib/queries';
-import { STATUS_BY_KEY, type ComponentStatus, type SearchResult } from '@rdms/shared';
-import { Box, Flag, FolderKanban, Layers, User } from 'lucide-react';
+import { fileDownloadUrl } from '@/lib/queries';
+import { FILE_CATEGORIES, STATUS_BY_KEY, type ComponentStatus, type SearchResult } from '@rdms/shared';
+import { Box, Flag, FolderKanban, Layers, Paperclip, ShoppingCart, User } from 'lucide-react';
 import * as React from 'react';
 import { useNavigate } from 'react-router';
 
@@ -13,10 +14,14 @@ const ICONS: Record<SearchResult['type'], React.ComponentType<{ className?: stri
   project: FolderKanban,
   user: User,
   milestone: Flag,
+  purchase: ShoppingCart,
+  file: Paperclip,
 };
 const GROUPS: { type: SearchResult['type']; label: string }[] = [
   { type: 'component', label: 'Componentes' },
   { type: 'system', label: 'Sistemas' },
+  { type: 'purchase', label: 'Compras' },
+  { type: 'file', label: 'Archivos' },
   { type: 'milestone', label: 'Hitos' },
   { type: 'project', label: 'Proyectos' },
   { type: 'user', label: 'Usuarios' },
@@ -51,6 +56,14 @@ export function GlobalSearch({ open, onOpenChange }: { open: boolean; onOpenChan
       case 'user':
         navigate(project ? `/p/${project.project.id}/components?responsible=${r.id}` : '/users');
         break;
+      case 'purchase':
+        navigate(`/p/${pid}/purchases`);
+        break;
+      case 'file':
+        if (r.entityType === 'component' && r.entityId) navigate(`/p/${pid}/components/${r.entityId}`);
+        else if (r.entityType === 'test' && r.entityId) navigate(`/p/${pid}/tests?test=${r.entityId}`);
+        else if (pid) window.open(fileDownloadUrl(pid, r.id, true), '_blank');
+        break;
     }
   };
 
@@ -81,7 +94,7 @@ export function GlobalSearch({ open, onOpenChange }: { open: boolean; onOpenChan
                           <span className="truncate">{r.title}</span>
                           {r.subtitle ? (
                             <span className="ml-auto truncate text-xs text-muted-foreground">
-                              {r.type === 'component' ? (STATUS_BY_KEY[r.subtitle as ComponentStatus]?.label ?? r.subtitle) : r.subtitle}
+                              {r.type === 'component' ? (STATUS_BY_KEY[r.subtitle as ComponentStatus]?.label ?? r.subtitle) : r.type === 'file' ? (FILE_CATEGORIES.find((c) => c.key === r.subtitle)?.label ?? r.subtitle) : r.subtitle}
                             </span>
                           ) : null}
                         </CommandItem>

@@ -8,7 +8,7 @@ import { useProject } from '@/hooks/use-project';
 import { formatDate } from '@/lib/format';
 import { useMilestoneMutation } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import { addDaysISO, daysBetween, isDone, type Component } from '@rdms/shared';
+import { addDaysISO, daysBetween, isDone, statusOrder, type Component } from '@rdms/shared';
 import { Calendar, Flag, Settings } from 'lucide-react';
 import * as React from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -20,8 +20,48 @@ export function SchedulePage() {
   const navigate = useNavigate();
   const milestoneMutation = useMilestoneMutation(project.id);
   const [onlyOpen, setOnlyOpen] = React.useState(true);
+  const [showDeps, setShowDeps] = React.useState(true);
+  const chartRef = React.useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = React.useState<{ key: string; d: string; blocking: boolean }[]>([]);
 
   const scheduled = components.filter((c) => c.dueDate && (!onlyOpen || !isDone(c)));
+  const scheduledIds = React.useMemo(() => new Set(scheduled.map((c) => c.id)), [scheduled]);
+
+  // Measure bar positions after layout and draw dependency connectors (dep end → dependent start).
+  React.useLayoutEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !showDeps) {
+      setEdges([]);
+      return;
+    }
+    const compute = () => {
+      const base = chart.getBoundingClientRect();
+      const pos = new Map<string, { x1: number; x2: number; y: number }>();
+      chart.querySelectorAll<HTMLElement>('[data-bar]').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        pos.set(el.dataset.bar!, { x1: r.left - base.left, x2: r.right - base.left, y: r.top - base.top + r.height / 2 });
+      });
+      const next: { key: string; d: string; blocking: boolean }[] = [];
+      for (const c of scheduled) {
+        const to = pos.get(c.id);
+        if (!to) continue;
+        for (const depId of c.dependsOn) {
+          const from = pos.get(depId);
+          const dep = data.componentsById.get(depId);
+          if (!from || !dep || !scheduledIds.has(depId)) continue;
+          const blocking = !isDone(dep) && !isDone(c) && statusOrder(dep.status) < statusOrder(c.status);
+          const dx = Math.max(24, Math.abs(to.x1 - from.x2) / 2);
+          next.push({ key: `${depId}-${c.id}`, blocking, d: `M ${from.x2} ${from.y} C ${from.x2 + dx} ${from.y}, ${to.x1 - dx} ${to.y}, ${to.x1} ${to.y}` });
+        }
+      }
+      setEdges(next);
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(chart);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduled.length, onlyOpen, showDeps, components]);
 
   // --- time range
   const dates = [project.startDate, project.targetDate, today, ...milestones.map((m) => m.date), ...scheduled.flatMap((c) => [c.startDate, c.dueDate])].filter((d): d is string => !!d);
@@ -57,6 +97,9 @@ export function SchedulePage() {
           <>
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <Checkbox checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> Solo abiertos
+            </label>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox checked={showDeps} onChange={(e) => setShowDeps(e.target.checked)} /> Dependencias
             </label>
             {canManageProject ? (
               <Button variant="outline" asChild>
@@ -134,6 +177,12 @@ export function SchedulePage() {
             <span className="inline-flex items-center gap-1">
               <span className="h-2 w-4 rounded-sm border-2 border-red-500" /> atrasado
             </span>
+            <span className="inline-flex items-center gap-1">
+              <svg width="18" height="8"><path d="M0 4 H18" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3 2" /></svg> depende de
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <svg width="18" height="8"><path d="M0 4 H18" stroke="#dc2626" strokeWidth="1.5" /></svg> bloqueando
+            </span>
           </div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -146,7 +195,22 @@ export function SchedulePage() {
                 </div>
               ))}
             </div>
-            <div className="relative">
+            <div className="relative" ref={chartRef}>
+              {edges.length ? (
+                <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full overflow-visible">
+                  <defs>
+                    <marker id="arrow-slate" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M0 0 L8 4 L0 8 z" fill="#94a3b8" />
+                    </marker>
+                    <marker id="arrow-red" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M0 0 L8 4 L0 8 z" fill="#dc2626" />
+                    </marker>
+                  </defs>
+                  {edges.map((e) => (
+                    <path key={e.key} d={e.d} fill="none" stroke={e.blocking ? '#dc2626' : '#94a3b8'} strokeWidth={e.blocking ? 1.8 : 1.2} strokeDasharray={e.blocking ? undefined : '4 3'} markerEnd={`url(#${e.blocking ? 'arrow-red' : 'arrow-slate'})`} opacity={0.9} />
+                  ))}
+                </svg>
+              ) : null}
               {/* milestone lines + today */}
               <div className="pointer-events-none absolute inset-y-0 left-[200px] right-0">
                 {milestones.map((m, i) => {
@@ -182,6 +246,7 @@ export function SchedulePage() {
                           </div>
                           <div className="relative h-full flex-1">
                             <div
+                              data-bar={c.id}
                               className={cn('absolute top-1.5 h-4 rounded-sm opacity-90 group-hover:opacity-100', STATUS_DOT[c.status], overdue && 'ring-2 ring-red-500 ring-inset')}
                               style={{ left: `${left}%`, width: `${width}%` }}
                               title={`${c.code} ${c.name}\n${formatDate(start)} → ${formatDate(c.dueDate)}`}

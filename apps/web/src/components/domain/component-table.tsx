@@ -10,7 +10,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Box, GitFork } from 'lucide-react';
 import * as React from 'react';
 import { useNavigate } from 'react-router';
 
-export type SortKey = 'code' | 'name' | 'system' | 'responsible' | 'status' | 'priority' | 'dueDate' | 'cost';
+export type SortKey = 'code' | 'name' | 'system' | 'responsible' | 'status' | 'priority' | 'dueDate' | 'cost' | 'blocking';
 
 interface Props {
   components: Component[];
@@ -47,6 +47,8 @@ export function ComponentTable({ components, hideSystem, dense, emptyTitle = 'Si
           return c.dueDate ?? '9999';
         case 'cost':
           return estimatedCost(c);
+        case 'blocking':
+          return blocking.get(c.id)?.blocking.length ?? 0;
       }
     };
     return [...components].sort((a, b) => {
@@ -56,9 +58,10 @@ export function ComponentTable({ components, hideSystem, dense, emptyTitle = 'Si
       if (va > vb) return 1 * dir;
       return a.code.localeCompare(b.code);
     });
-  }, [components, sort, systemsById, usersById]);
+  }, [components, sort, systemsById, usersById, blocking]);
 
-  const toggle = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  // numeric "more is more interesting" columns start descending
+  const toggle = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'blocking' || key === 'cost' ? 'desc' : 'asc' }));
 
   if (components.length === 0) {
     return <EmptyState icon={Box} title={emptyTitle} description={emptyDescription} action={emptyAction} />;
@@ -84,6 +87,9 @@ export function ComponentTable({ components, hideSystem, dense, emptyTitle = 'Si
             <SortableHead sort={sort} onToggle={toggle} k="status">Estado</SortableHead>
             <SortableHead sort={sort} onToggle={toggle} k="priority" className="w-[60px] text-center">
               Prio.
+            </SortableHead>
+            <SortableHead sort={sort} onToggle={toggle} k="blocking" className="hidden @2xl:table-cell w-[84px] text-center" title="Cuántos componentes están bloqueados por este">
+              Bloquea
             </SortableHead>
             <SortableHead sort={sort} onToggle={toggle} k="dueDate" className="hidden @3xl:table-cell">
               Fecha límite
@@ -116,7 +122,7 @@ export function ComponentTable({ components, hideSystem, dense, emptyTitle = 'Si
                       <span className="flex flex-wrap items-center gap-1">
                         {blocked ? <BlockedBadge /> : null}
                         {blocksOthers > 0 ? (
-                          <span className="inline-flex items-center gap-0.5 text-[11px] text-red-600" title={`Bloquea ${blocksOthers} componente(s)`}>
+                          <span className="inline-flex items-center gap-0.5 text-[11px] text-red-600 @2xl:hidden" title={`Bloquea ${blocksOthers} componente(s)`}>
                             <GitFork className="size-3" /> bloquea {blocksOthers}
                           </span>
                         ) : null}
@@ -142,6 +148,15 @@ export function ComponentTable({ components, hideSystem, dense, emptyTitle = 'Si
                 <TableCell className="text-center">
                   <PriorityIcon priority={c.priority} />
                 </TableCell>
+                <TableCell className="hidden @2xl:table-cell text-center">
+                  {blocksOthers > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700 tabular" title={`Bloquea ${blocksOthers} componente(s)`}>
+                      <GitFork className="size-3" /> {blocksOthers}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/50">—</span>
+                  )}
+                </TableCell>
                 <TableCell className="hidden @3xl:table-cell">
                   {c.dueDate ? (
                     <span className={cn('flex flex-col text-xs tabular', overdue && 'text-red-600 font-medium', soon && 'text-amber-600 font-medium')}>
@@ -162,10 +177,10 @@ export function ComponentTable({ components, hideSystem, dense, emptyTitle = 'Si
   );
 }
 
-function SortableHead({ k, sort, onToggle, children, className }: { k: SortKey; sort: { key: SortKey; dir: 'asc' | 'desc' }; onToggle: (k: SortKey) => void; children: React.ReactNode; className?: string }) {
+function SortableHead({ k, sort, onToggle, children, className, title }: { k: SortKey; sort: { key: SortKey; dir: 'asc' | 'desc' }; onToggle: (k: SortKey) => void; children: React.ReactNode; className?: string; title?: string }) {
   return (
     <TableHead className={className}>
-      <button type="button" onClick={() => onToggle(k)} className="inline-flex items-center gap-1 hover:text-foreground cursor-pointer">
+      <button type="button" onClick={() => onToggle(k)} title={title} className="inline-flex items-center gap-1 hover:text-foreground cursor-pointer">
         {children}
         {sort.key === k ? sort.dir === 'asc' ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" /> : <ArrowUpDown className="size-3 opacity-30" />}
       </button>

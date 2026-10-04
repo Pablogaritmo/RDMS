@@ -4,6 +4,10 @@ import { db, schema, type DbOrTx } from '../db/index.js';
 import { notFound } from '../lib/errors.js';
 import { serializeMilestone, serializeProject, serializeUserSummary } from '../lib/serialize.js';
 import { loadComponents } from './components.js';
+import { loadFiles } from './files.js';
+import { loadInspections } from './inspections.js';
+import { loadPurchases } from './purchases.js';
+import { loadTests } from './tests.js';
 
 export async function loadProjectMembers(projectId: string, tx: DbOrTx = db): Promise<ProjectMember[]> {
   const rows = await tx
@@ -49,11 +53,15 @@ export async function loadMilestones(projectId: string, tx: DbOrTx = db): Promis
 export async function loadProjectBundle(projectId: string): Promise<ProjectBundle> {
   const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).limit(1);
   if (!project) throw notFound('Proyecto no encontrado');
-  const [members, systems, components, milestones] = await Promise.all([
+  const [members, systems, components, milestones, purchases, tests, inspections, files] = await Promise.all([
     loadProjectMembers(projectId),
     loadSystems(projectId),
     loadComponents(projectId),
     loadMilestones(projectId),
+    loadPurchases(projectId),
+    loadTests(projectId),
+    loadInspections(projectId),
+    loadFiles(projectId),
   ]);
-  return { project: serializeProject(project), members, systems, components, milestones };
+  return { project: serializeProject(project), members, systems, components, milestones, purchases, tests, inspections, files };
 }

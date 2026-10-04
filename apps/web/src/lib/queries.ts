@@ -7,6 +7,11 @@ import type {
   CreateProjectInput,
   CreateSystemInput,
   CreateUserInput,
+  FileCategory,
+  FileEntityType,
+  FileItem,
+  Inspection,
+  InspectionInput,
   ManufacturingInput,
   MembershipInput,
   Milestone,
@@ -14,13 +19,20 @@ import type {
   Project,
   ProjectBundle,
   ProjectMember,
+  ProjectMetrics,
   ProgressSummary,
+  Purchase,
+  PurchaseInput,
   SearchResult,
   SessionUser,
   System,
+  Test,
+  TestInput,
   UpdateComponentInput,
   UpdateProjectInput,
+  UpdatePurchaseInput,
   UpdateSystemInput,
+  UpdateTestInput,
   UpdateUserInput,
   User,
 } from '@rdms/shared';
@@ -34,6 +46,7 @@ export const keys = {
   activity: (projectId: string, filters?: Record<string, string | undefined>) => ['activity', projectId, filters ?? {}] as const,
   componentActivity: (projectId: string, componentId: string) => ['component-activity', projectId, componentId] as const,
   search: (q: string, projectId?: string) => ['search', q, projectId ?? ''] as const,
+  metrics: (projectId: string) => ['metrics', projectId] as const,
 };
 
 export type ProjectListItem = Project & { progress: ProgressSummary; memberCount: number };
@@ -109,7 +122,13 @@ export function useSearch(q: string, projectId?: string) {
 function useInvalidate() {
   const qc = useQueryClient();
   return {
-    bundle: (projectId: string) => Promise.all([qc.invalidateQueries({ queryKey: keys.bundle(projectId) }), qc.invalidateQueries({ queryKey: ['activity', projectId] }), qc.invalidateQueries({ queryKey: ['component-activity', projectId] })]),
+    bundle: (projectId: string) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.bundle(projectId) }),
+        qc.invalidateQueries({ queryKey: ['activity', projectId] }),
+        qc.invalidateQueries({ queryKey: ['component-activity', projectId] }),
+        qc.invalidateQueries({ queryKey: keys.metrics(projectId) }),
+      ]),
     projects: () => qc.invalidateQueries({ queryKey: keys.projects }),
     users: () => qc.invalidateQueries({ queryKey: keys.users }),
     me: () => qc.invalidateQueries({ queryKey: keys.me }),
@@ -360,3 +379,80 @@ export function useChangePassword() {
     mutationFn: (input: { currentPassword: string; newPassword: string }) => api.post('/auth/change-password', input),
   });
 }
+
+// ------------------------------------------------------- phase 2/3 modules
+
+export function useMetrics(projectId: string) {
+  return useQuery({
+    queryKey: keys.metrics(projectId),
+    queryFn: async () => (await api.get<{ metrics: ProjectMetrics }>(`/projects/${projectId}/metrics`)).metrics,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function usePurchaseMutation(projectId: string) {
+  const inv = useInvalidate();
+  return useMutation({
+    mutationFn: async (vars: { id?: string; input?: PurchaseInput | UpdatePurchaseInput; remove?: boolean }) => {
+      if (vars.remove && vars.id) return api.delete(`/projects/${projectId}/purchases/${vars.id}`);
+      if (vars.id) return (await api.patch<{ purchase: Purchase }>(`/projects/${projectId}/purchases/${vars.id}`, vars.input)).purchase;
+      return (await api.post<{ purchase: Purchase }>(`/projects/${projectId}/purchases`, vars.input)).purchase;
+    },
+    onSuccess: () => inv.bundle(projectId),
+  });
+}
+
+export function useTestMutation(projectId: string) {
+  const inv = useInvalidate();
+  return useMutation({
+    mutationFn: async (vars: { id?: string; input?: TestInput | UpdateTestInput; remove?: boolean }) => {
+      if (vars.remove && vars.id) return api.delete(`/projects/${projectId}/tests/${vars.id}`);
+      if (vars.id) return (await api.patch<{ test: Test }>(`/projects/${projectId}/tests/${vars.id}`, vars.input)).test;
+      return (await api.post<{ test: Test }>(`/projects/${projectId}/tests`, vars.input)).test;
+    },
+    onSuccess: () => inv.bundle(projectId),
+  });
+}
+
+export type InspectionResultPayload = { inspection: Inspection; statusChange: StatusChangeResult | null };
+
+export function useInspectionMutation(projectId: string) {
+  const inv = useInvalidate();
+  return useMutation({
+    mutationFn: async (vars: { input?: InspectionInput; removeId?: string }) => {
+      if (vars.removeId) return (await api.delete<{ ok: true }>(`/projects/${projectId}/inspections/${vars.removeId}`)) as unknown as InspectionResultPayload | { ok: true };
+      return api.post<InspectionResultPayload>(`/projects/${projectId}/inspections`, vars.input);
+    },
+    onSuccess: () => inv.bundle(projectId),
+  });
+}
+
+export async function uploadFileRequest(projectId: string, file: File, meta: { entityType: FileEntityType; entityId: string; category: FileCategory }): Promise<FileItem> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('entityType', meta.entityType);
+  form.append('entityId', meta.entityId);
+  form.append('category', meta.category);
+  const res = await fetch(`/api/projects/${projectId}/files`, { method: 'POST', body: form, credentials: 'include' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error ?? `Error ${res.status}`);
+  return (data as { file: FileItem }).file;
+}
+
+export function useUploadFile(projectId: string) {
+  const inv = useInvalidate();
+  return useMutation({
+    mutationFn: (vars: { file: File; entityType: FileEntityType; entityId: string; category: FileCategory }) => uploadFileRequest(projectId, vars.file, vars),
+    onSuccess: () => inv.bundle(projectId),
+  });
+}
+
+export function useDeleteFile(projectId: string) {
+  const inv = useInvalidate();
+  return useMutation({
+    mutationFn: (fileId: string) => api.delete(`/projects/${projectId}/files/${fileId}`),
+    onSuccess: () => inv.bundle(projectId),
+  });
+}
+
+export const fileDownloadUrl = (projectId: string, fileId: string, inline = false) => `/api/projects/${projectId}/files/${fileId}/download${inline ? '?inline=1' : ''}`;

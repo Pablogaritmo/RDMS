@@ -154,6 +154,9 @@ export const ACTIVITY_ACTIONS = [
   'collaborator_removed',
   'member_added',
   'member_removed',
+  'file_added',
+  'file_removed',
+  'inspected',
 ] as const;
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
 
@@ -182,9 +185,26 @@ export const COMPONENT_FIELD_LABELS: Record<string, string> = {
   designNotes: 'notas de diseño',
   estMaterialCost: 'costo estimado de material',
   estManufacturingCost: 'costo estimado de manufactura',
-  estPurchaseCost: 'costo estimado de compra',
-  estOtherCost: 'otros costos estimados',
+  estShippingCost: 'costo estimado de envío',
+  estAdditionalCost: 'costos adicionales estimados',
   actualCost: 'costo real',
+  // purchases
+  unitCost: 'costo unitario',
+  shippingCost: 'costo de envío',
+  additionalCost: 'costos adicionales',
+  leadTimeDays: 'tiempo de entrega (días)',
+  orderedAt: 'fecha de pedido',
+  expectedAt: 'fecha esperada',
+  receivedAt: 'fecha de recepción',
+  url: 'enlace',
+  requestedById: 'solicitado por',
+  componentIds: 'componentes asociados',
+  // tests
+  type: 'tipo',
+  objective: 'objetivo',
+  result: 'resultado',
+  observations: 'observaciones',
+  date: 'fecha',
   process: 'proceso',
   machine: 'máquina',
   workshop: 'taller',
@@ -198,4 +218,32 @@ export const COMPONENT_FIELD_LABELS: Record<string, string> = {
   needsExternal: 'necesita proveedor externo',
 };
 
+/** Estimated cost categories of a component (order matters for display). */
+export const COST_CATEGORIES = [
+  { key: 'estMaterialCost', label: 'Material' },
+  { key: 'estManufacturingCost', label: 'Manufactura' },
+  { key: 'estShippingCost', label: 'Envío' },
+  { key: 'estAdditionalCost', label: 'Adicionales' },
+] as const;
+export type CostCategory = (typeof COST_CATEGORIES)[number]['key'];
+
+export const FILE_CATEGORIES = [
+  { key: 'drawing', label: 'Plano' },
+  { key: 'cad', label: 'CAD' },
+  { key: 'datasheet', label: 'Datasheet' },
+  { key: 'photo', label: 'Fotografía' },
+  { key: 'manufacturing', label: 'Doc. de fabricación' },
+  { key: 'test_result', label: 'Resultado de prueba' },
+  { key: 'other', label: 'Otro' },
+] as const;
+export type FileCategory = (typeof FILE_CATEGORIES)[number]['key'];
+export const FILE_CATEGORY_KEYS = FILE_CATEGORIES.map((f) => f.key) as [FileCategory, ...FileCategory[]];
+
+export const FILE_ENTITY_TYPES = ['component', 'test', 'inspection', 'project'] as const;
+export type FileEntityType = (typeof FILE_ENTITY_TYPES)[number];
+
+/** Suggested test types (free text is allowed). */
+export const TEST_TYPE_SUGGESTIONS = ['Estructural', 'Funcional', 'Eléctrica', 'Software', 'Ambiental', 'Prueba estática', 'Prueba de eyección', 'Prueba de caída', 'Integración', 'Otro'];
+
 export const DUE_SOON_DAYS = 7;
+export const MAX_FILE_SIZE_MB = 50;

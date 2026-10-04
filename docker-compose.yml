@@ -36,8 +36,13 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin1234}
       ADMIN_NAME: ${ADMIN_NAME:-Administrador}
       SEED_DEMO: ${SEED_DEMO:-true}
+      UPLOAD_DIR: /app/uploads
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
     ports:
       - "3000:3000"
+    volumes:
+      - rdms_uploads:/app/uploads
 
 volumes:
   rdms_pgdata:
+  rdms_uploads:

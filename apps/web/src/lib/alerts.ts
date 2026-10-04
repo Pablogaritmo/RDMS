@@ -1,6 +1,6 @@
 import type { ProjectData } from '@/hooks/use-project';
 import { formatMoney } from '@/lib/format';
-import { computeCosts, daysBetween, estimatedCost, isDone, type Component } from '@rdms/shared';
+import { computeCosts, daysBetween, estimatedCost, isDone, purchaseRisks, purchasesForComponents, type Component } from '@rdms/shared';
 
 export interface Alert {
   id: string;
@@ -13,7 +13,7 @@ const plural = (n: number, s: string, p: string) => (n === 1 ? s : p);
 
 /** Derives the dashboard alerts from project data. Nothing here is stored. */
 export function buildAlerts(data: ProjectData): Alert[] {
-  const { project, components, systems, milestones, blocking, today, isOverdue, isDueSoon } = data;
+  const { project, components, systems, milestones, blocking, today, isOverdue, isDueSoon, purchases, componentsById } = data;
   const base = `/p/${project.id}/components`;
   const alerts: Alert[] = [];
   const open = components.filter((c) => !isDone(c));
@@ -57,6 +57,24 @@ export function buildAlerts(data: ProjectData): Alert[] {
     alerts.push({ id: 'material-more', severity: 'warning', text: `Otros ${materialMissing.length - 3} componentes listos para fabricar aún no tienen material.`, href: `${base}?material=to_buy` });
   }
 
+  // purchases arriving late / not ordered
+  const risks = purchaseRisks(purchases, componentsById, today);
+  const seen = new Set<string>();
+  for (const r of risks) {
+    if (seen.has(r.purchase.id)) continue;
+    seen.add(r.purchase.id);
+    if (seen.size > 3) break;
+    alerts.push({
+      id: `purchase-${r.purchase.id}`,
+      severity: 'danger',
+      text:
+        r.reason === 'late'
+          ? `${r.purchase.name} llega el ${r.arrival} y ${r.component.code} vence el ${r.component.dueDate} (${r.daysLate} días tarde).`
+          : `${r.purchase.name} todavía no se ha pedido y ${r.component.code} ya está en fabricación.`,
+      href: `/p/${project.id}/purchases`,
+    });
+  }
+
   // due soon
   const soon = open.filter(isDueSoon);
   if (soon.length) {
@@ -69,18 +87,32 @@ export function buildAlerts(data: ProjectData): Alert[] {
   }
 
   // budget
-  const costs = computeCosts(components);
+  const costs = computeCosts(components, purchases);
   if (project.budget && costs.estimated > project.budget) {
     const pct = Math.round(((costs.estimated - project.budget) / project.budget) * 100);
-    alerts.push({ id: 'budget-project', severity: 'danger', text: `El costo estimado del cohete supera el presupuesto en ${pct}% (${formatMoney(costs.estimated - project.budget, project.currency)}).` });
+    alerts.push({ id: 'budget-project', severity: 'danger', text: `El costo estimado del cohete supera el presupuesto en ${pct}% (${formatMoney(costs.estimated - project.budget, project.currency)}).`, href: `/p/${project.id}/budget` });
+  }
+  if (project.budget && costs.actual + costs.committed > project.budget) {
+    alerts.push({ id: 'budget-spent', severity: 'danger', text: `Gastado + comprometido (${formatMoney(costs.actual + costs.committed, project.currency)}) supera el presupuesto.`, href: `/p/${project.id}/budget` });
   }
   for (const s of systems) {
     if (!s.budget) continue;
-    const est = components.filter((c) => c.systemId === s.id).reduce((acc, c) => acc + estimatedCost(c), 0);
+    const comps = components.filter((c) => c.systemId === s.id);
+    const est = comps.reduce((acc, c) => acc + estimatedCost(c), 0);
     if (est > s.budget) {
       const pct = Math.round(((est - s.budget) / s.budget) * 100);
-      alerts.push({ id: `budget-${s.id}`, severity: 'warning', text: `El presupuesto de ${s.name} está excedido en ${pct}%.`, href: `/p/${project.id}/systems/${s.id}` });
+      alerts.push({ id: `budget-${s.id}`, severity: 'warning', text: `El presupuesto de ${s.name} está excedido en ${pct}% (estimado).`, href: `/p/${project.id}/budget` });
     }
+    const spent = computeCosts(comps, purchasesForComponents(new Set(comps.map((c) => c.id)), purchases), false).actual;
+    if (spent > s.budget) {
+      alerts.push({ id: `budget-spent-${s.id}`, severity: 'danger', text: `${s.name} ya gastó más que su presupuesto (${formatMoney(spent, project.currency)}).`, href: `/p/${project.id}/budget` });
+    }
+  }
+
+  // pieces waiting for inspection
+  const awaiting = open.filter((c) => c.status === 'inspection');
+  if (awaiting.length) {
+    alerts.push({ id: 'inspection', severity: 'info', text: `${awaiting.length} ${plural(awaiting.length, 'componente espera', 'componentes esperan')} inspección.`, href: `${base}?status=inspection` });
   }
 
   // next milestone

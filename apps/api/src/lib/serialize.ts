@@ -2,6 +2,8 @@ import type {
   ActivityLog,
   Component,
   ComponentStatus,
+  FileItem,
+  Inspection,
   Manufacturing,
   ManufacturingProcess,
   MaterialStatus,
@@ -9,6 +11,8 @@ import type {
   Priority,
   Project,
   ProjectStatus,
+  Purchase,
+  Test,
   User,
   UserSummary,
 } from '@rdms/shared';
@@ -20,6 +24,10 @@ type ComponentRow = typeof schema.components.$inferSelect;
 type ManufacturingRow = typeof schema.manufacturing.$inferSelect;
 type MilestoneRow = typeof schema.milestones.$inferSelect;
 type ActivityRow = typeof schema.activityLogs.$inferSelect;
+type PurchaseRow = typeof schema.purchases.$inferSelect;
+type InspectionRow = typeof schema.inspections.$inferSelect;
+type TestRow = typeof schema.tests.$inferSelect;
+type FileRow = typeof schema.files.$inferSelect;
 
 export const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() : null);
 
@@ -99,8 +107,8 @@ export function serializeComponent(c: ComponentRow, extras: ComponentExtras): Co
     designNotes: c.designNotes,
     estMaterialCost: c.estMaterialCost,
     estManufacturingCost: c.estManufacturingCost,
-    estPurchaseCost: c.estPurchaseCost,
-    estOtherCost: c.estOtherCost,
+    estShippingCost: c.estShippingCost,
+    estAdditionalCost: c.estAdditionalCost,
     actualCost: c.actualCost,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
@@ -128,5 +136,76 @@ export function serializeActivity(a: ActivityRow, userName: string | null): Acti
     changes: (a.changes as ActivityLog['changes']) ?? null,
     note: a.note,
     createdAt: a.createdAt.toISOString(),
+  };
+}
+
+export function serializePurchase(p: PurchaseRow, componentIds: string[]): Purchase {
+  return {
+    id: p.id,
+    projectId: p.projectId,
+    name: p.name,
+    description: p.description,
+    quantity: p.quantity,
+    unitCost: p.unitCost,
+    shippingCost: p.shippingCost,
+    additionalCost: p.additionalCost,
+    supplier: p.supplier,
+    url: p.url,
+    status: p.status as Purchase['status'],
+    leadTimeDays: p.leadTimeDays,
+    orderedAt: p.orderedAt,
+    expectedAt: p.expectedAt,
+    receivedAt: p.receivedAt,
+    requestedById: p.requestedBy,
+    notes: p.notes,
+    componentIds,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+  };
+}
+
+export function serializeInspection(i: InspectionRow): Inspection {
+  return {
+    id: i.id,
+    componentId: i.componentId,
+    inspectorId: i.inspectorId,
+    date: i.date,
+    result: i.result as Inspection['result'],
+    observations: i.observations,
+    createdAt: i.createdAt.toISOString(),
+  };
+}
+
+export function serializeTest(t: TestRow): Test {
+  return {
+    id: t.id,
+    projectId: t.projectId,
+    systemId: t.systemId,
+    componentId: t.componentId,
+    name: t.name,
+    type: t.type,
+    date: t.date,
+    responsibleId: t.responsibleId,
+    objective: t.objective,
+    result: t.result,
+    status: t.status as Test['status'],
+    observations: t.observations,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+  };
+}
+
+export function serializeFile(f: FileRow): FileItem {
+  return {
+    id: f.id,
+    projectId: f.projectId,
+    entityType: f.entityType as FileItem['entityType'],
+    entityId: f.entityId,
+    category: f.category as FileItem['category'],
+    name: f.name,
+    mime: f.mime,
+    size: f.size,
+    uploadedById: f.uploadedBy,
+    createdAt: f.createdAt.toISOString(),
   };
 }

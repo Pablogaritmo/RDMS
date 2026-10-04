@@ -4,22 +4,22 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useProject } from '@/hooks/use-project';
 import { formatHours, formatMoney, pct } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { estimatedCost, summarizeComponents } from '@rdms/shared';
+import { estimatedCost, purchasesForComponents, summarizeComponents } from '@rdms/shared';
 import { Layers, Settings } from 'lucide-react';
 import { Link, useNavigate } from 'react-router';
 
 export function SystemsPage() {
-  const { project, systems, components, blocking, today, usersById, canManageProject } = useProject();
+  const { project, systems, components, blocking, today, usersById, canManageProject, purchases } = useProject();
   const navigate = useNavigate();
 
   const rows = systems.map((s) => {
     const comps = components.filter((c) => c.systemId === s.id);
-    const sum = summarizeComponents(comps, blocking, today);
+    const sum = summarizeComponents(comps, blocking, today, purchasesForComponents(new Set(comps.map((c) => c.id)), purchases), false);
     const est = comps.reduce((acc, c) => acc + estimatedCost(c), 0);
     const lead = s.members.find((m) => m.role === 'lead');
     return { s, sum, est, lead };
   });
-  const totals = summarizeComponents(components, blocking, today);
+  const totals = summarizeComponents(components, blocking, today, purchases);
 
   return (
     <div className="flex flex-col gap-4">
@@ -44,7 +44,7 @@ export function SystemsPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Sistema</TableHead>
-                <TableHead className="w-[220px]">Avance</TableHead>
+                <TableHead className="w-[220px] min-w-[180px]">Avance</TableHead>
                 <TableHead className="text-right">Comp.</TableHead>
                 <TableHead className="text-right">Atrasados</TableHead>
                 <TableHead className="text-right">Bloqueados</TableHead>

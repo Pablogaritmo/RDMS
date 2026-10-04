@@ -32,8 +32,8 @@ interface FormState {
   designNotes: string;
   estMaterialCost: string;
   estManufacturingCost: string;
-  estPurchaseCost: string;
-  estOtherCost: string;
+  estShippingCost: string;
+  estAdditionalCost: string;
   actualCost: string;
 }
 
@@ -61,8 +61,8 @@ function fromComponent(c: Component | null, defaults: { systemId?: string; respo
     designNotes: c?.designNotes ?? '',
     estMaterialCost: num(c?.estMaterialCost ?? 0) === '0' ? '' : num(c?.estMaterialCost),
     estManufacturingCost: num(c?.estManufacturingCost ?? 0) === '0' ? '' : num(c?.estManufacturingCost),
-    estPurchaseCost: num(c?.estPurchaseCost ?? 0) === '0' ? '' : num(c?.estPurchaseCost),
-    estOtherCost: num(c?.estOtherCost ?? 0) === '0' ? '' : num(c?.estOtherCost),
+    estShippingCost: num(c?.estShippingCost ?? 0) === '0' ? '' : num(c?.estShippingCost),
+    estAdditionalCost: num(c?.estAdditionalCost ?? 0) === '0' ? '' : num(c?.estAdditionalCost),
     actualCost: num(c?.actualCost),
   };
 }
@@ -124,8 +124,8 @@ export function ComponentFormDialog({ open, onOpenChange, component = null, defa
       designNotes: strOrNull(form.designNotes),
       estMaterialCost: numOrNull(form.estMaterialCost) ?? 0,
       estManufacturingCost: numOrNull(form.estManufacturingCost) ?? 0,
-      estPurchaseCost: numOrNull(form.estPurchaseCost) ?? 0,
-      estOtherCost: numOrNull(form.estOtherCost) ?? 0,
+      estShippingCost: numOrNull(form.estShippingCost) ?? 0,
+      estAdditionalCost: numOrNull(form.estAdditionalCost) ?? 0,
       actualCost: numOrNull(form.actualCost),
     };
     if (canAssign || !isEdit) base.responsibleId = form.responsibleId;
@@ -274,17 +274,17 @@ export function ComponentFormDialog({ open, onOpenChange, component = null, defa
               </Field>
 
               <p className="sm:col-span-2 mt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Costos estimados ({currency})</p>
-              <Field label="Material">
+              <Field label="Material" hint="Materia prima o la pieza comprada">
                 <Input type="number" min={0} step="any" value={form.estMaterialCost} onChange={(e) => set('estMaterialCost', e.target.value)} placeholder="0" />
               </Field>
-              <Field label="Manufactura">
+              <Field label="Manufactura" hint="Maquinado, impresión, servicios de taller">
                 <Input type="number" min={0} step="any" value={form.estManufacturingCost} onChange={(e) => set('estManufacturingCost', e.target.value)} placeholder="0" />
               </Field>
-              <Field label="Compra">
-                <Input type="number" min={0} step="any" value={form.estPurchaseCost} onChange={(e) => set('estPurchaseCost', e.target.value)} placeholder="0" />
+              <Field label="Envío" hint="Flete, courier, transporte">
+                <Input type="number" min={0} step="any" value={form.estShippingCost} onChange={(e) => set('estShippingCost', e.target.value)} placeholder="0" />
               </Field>
-              <Field label="Otros">
-                <Input type="number" min={0} step="any" value={form.estOtherCost} onChange={(e) => set('estOtherCost', e.target.value)} placeholder="0" />
+              <Field label="Adicionales" hint="Impuestos, aduana, consumibles, imprevistos">
+                <Input type="number" min={0} step="any" value={form.estAdditionalCost} onChange={(e) => set('estAdditionalCost', e.target.value)} placeholder="0" />
               </Field>
               <Field label={`Costo real (${currency})`} hint="Déjalo vacío hasta conocerlo." className="sm:col-span-2">
                 <Input type="number" min={0} step="any" value={form.actualCost} onChange={(e) => set('actualCost', e.target.value)} />

@@ -4,10 +4,13 @@ import { formatDate, formatDateTime, formatMoney, timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
   COMPONENT_FIELD_LABELS,
+  INSPECTION_RESULTS,
   MANUFACTURING_PROCESSES,
   MATERIAL_STATUSES,
   PRIORITY_BY_KEY,
+  PURCHASE_STATUSES,
   STATUS_BY_KEY,
+  TEST_STATUSES,
   type ActivityChange,
   type ActivityLog,
   type ComponentStatus,
@@ -17,14 +20,17 @@ import { Activity } from 'lucide-react';
 import * as React from 'react';
 import { Link } from 'react-router';
 
-const MONEY_FIELDS = new Set(['estMaterialCost', 'estManufacturingCost', 'estPurchaseCost', 'estOtherCost', 'actualCost', 'budget']);
-const DATE_FIELDS = new Set(['startDate', 'dueDate', 'scheduledDate', 'actualDate', 'targetDate', 'date']);
+const MONEY_FIELDS = new Set(['estMaterialCost', 'estManufacturingCost', 'estShippingCost', 'estAdditionalCost', 'actualCost', 'budget', 'unitCost', 'shippingCost', 'additionalCost']);
+const DATE_FIELDS = new Set(['startDate', 'dueDate', 'scheduledDate', 'actualDate', 'targetDate', 'date', 'orderedAt', 'expectedAt', 'receivedAt']);
 const MINUTE_FIELDS = new Set(['setupMinutes', 'machineMinutes', 'finishingMinutes', 'inspectionMinutes']);
 
-function renderValue(field: string, value: unknown, label: string | null | undefined, currency: string): string {
+function renderValue(field: string, value: unknown, label: string | null | undefined, currency: string, entityType?: ActivityLog['entityType']): string {
   if (label) return label;
   if (value === null || value === undefined || value === '') return '—';
+  if (field === 'status' && entityType === 'purchase') return PURCHASE_STATUSES.find((s) => s.key === value)?.label ?? String(value);
+  if (field === 'status' && entityType === 'test') return TEST_STATUSES.find((s) => s.key === value)?.label ?? String(value);
   if (field === 'status') return STATUS_BY_KEY[value as ComponentStatus]?.label ?? String(value);
+  if (field === 'inspection') return INSPECTION_RESULTS.find((r) => r.key === value)?.label ?? String(value);
   if (field === 'priority') return PRIORITY_BY_KEY[value as Priority]?.label ?? String(value);
   if (field === 'materialStatus') return MATERIAL_STATUSES.find((m) => m.key === value)?.label ?? String(value);
   if (field === 'process') return MANUFACTURING_PROCESSES.find((m) => m.key === value)?.label ?? String(value);
@@ -38,27 +44,48 @@ function renderValue(field: string, value: unknown, label: string | null | undef
 
 const fieldLabel = (field: string) => COMPONENT_FIELD_LABELS[field] ?? field;
 
+const ENTITY_NOUN: Record<ActivityLog['entityType'], string> = { project: 'el proyecto', system: 'el sistema', component: '', milestone: 'el hito', purchase: 'la compra', inspection: 'la inspección', test: 'la prueba' };
+
 function describe(log: ActivityLog, currency: string): React.ReactNode {
   const changes = log.changes ?? [];
   const statusChange = changes.find((c) => c.field === 'status');
+  const noun = ENTITY_NOUN[log.entityType] ? `${ENTITY_NOUN[log.entityType]} ` : '';
   switch (log.action) {
     case 'created':
       return (
         <>
-          creó <b>{log.entityLabel}</b>
-          {statusChange ? <> en estado <b>{renderValue('status', statusChange.to, null, currency)}</b></> : null}
+          creó {noun}<b>{log.entityLabel}</b>
+          {statusChange ? <> en estado <b>{renderValue('status', statusChange.to, null, currency, log.entityType)}</b></> : null}
+        </>
+      );
+    case 'file_added':
+      return (
+        <>
+          adjuntó <b>{changes[0]?.toLabel ?? 'un archivo'}</b> a {noun}<b>{log.entityLabel}</b>
+        </>
+      );
+    case 'file_removed':
+      return (
+        <>
+          eliminó el archivo <b>{changes[0]?.fromLabel ?? ''}</b>{log.entityLabel ? <> de {noun}<b>{log.entityLabel}</b></> : null}
+        </>
+      );
+    case 'inspected':
+      return (
+        <>
+          inspeccionó <b>{log.entityLabel}</b>: <b>{renderValue('inspection', changes[0]?.to, changes[0]?.toLabel, currency)}</b>
         </>
       );
     case 'deleted':
       return (
         <>
-          eliminó <b>{log.entityLabel}</b>
+          eliminó {noun}<b>{log.entityLabel}</b>
         </>
       );
     case 'status_changed':
       return (
         <>
-          cambió <b>{log.entityLabel}</b> de <b>{renderValue('status', statusChange?.from, null, currency)}</b> a <b>{renderValue('status', statusChange?.to, null, currency)}</b>
+          cambió {noun}<b>{log.entityLabel}</b> de <b>{renderValue('status', statusChange?.from, null, currency, log.entityType)}</b> a <b>{renderValue('status', statusChange?.to, null, currency, log.entityType)}</b>
         </>
       );
     case 'dependency_added': {
@@ -114,13 +141,13 @@ function describe(log: ActivityLog, currency: string): React.ReactNode {
         const ch = changes[0] as ActivityChange;
         return (
           <>
-            modificó {fieldLabel(ch.field)} de <b>{log.entityLabel}</b>: <s className="text-muted-foreground">{renderValue(ch.field, ch.from, ch.fromLabel, currency)}</s> → <b>{renderValue(ch.field, ch.to, ch.toLabel, currency)}</b>
+            modificó {fieldLabel(ch.field)} de {noun}<b>{log.entityLabel}</b>: <s className="text-muted-foreground">{renderValue(ch.field, ch.from, ch.fromLabel, currency, log.entityType)}</s> → <b>{renderValue(ch.field, ch.to, ch.toLabel, currency, log.entityType)}</b>
           </>
         );
       }
       return (
         <>
-          actualizó <b>{log.entityLabel}</b> ({changes.map((c) => fieldLabel(c.field)).join(', ')}
+          actualizó {noun}<b>{log.entityLabel}</b> ({changes.map((c) => fieldLabel(c.field)).join(', ')}
           {log.note === 'manufactura' ? ' · manufactura' : ''})
         </>
       );
@@ -139,7 +166,16 @@ export function ActivityFeed({ logs, compact, showEntityLinks = true, className 
     <ol className={cn('relative flex flex-col', className)}>
       {logs.map((log, i) => {
         const user = log.userId ? (project?.usersById.get(log.userId) ?? { id: log.userId, name: log.userName ?? 'Usuario', avatarUrl: null }) : null;
-        const entityHref = showEntityLinks && project && log.entityType === 'component' && log.action !== 'deleted' ? `/p/${project.project.id}/components/${log.entityId}` : null;
+        const entityHref =
+          showEntityLinks && project && log.action !== 'deleted'
+            ? log.entityType === 'component'
+              ? `/p/${project.project.id}/components/${log.entityId}`
+              : log.entityType === 'purchase'
+                ? `/p/${project.project.id}/purchases`
+                : log.entityType === 'test'
+                  ? `/p/${project.project.id}/tests?test=${log.entityId}`
+                  : null
+            : null;
         const content = (
           <span className="text-[13px] leading-snug">
             <span className="font-medium">{log.userName ?? 'Sistema'}</span> {describe(log, currency)}
@@ -161,7 +197,7 @@ export function ActivityFeed({ logs, compact, showEntityLinks = true, className 
                 <ul className="mt-1 flex flex-col gap-0.5 text-xs text-muted-foreground">
                   {log.changes!.map((ch) => (
                     <li key={ch.field}>
-                      {fieldLabel(ch.field)}: <s>{renderValue(ch.field, ch.from, ch.fromLabel, currency)}</s> → <span className="text-foreground">{renderValue(ch.field, ch.to, ch.toLabel, currency)}</span>
+                      {fieldLabel(ch.field)}: <s>{renderValue(ch.field, ch.from, ch.fromLabel, currency, log.entityType)}</s> → <span className="text-foreground">{renderValue(ch.field, ch.to, ch.toLabel, currency, log.entityType)}</span>
                     </li>
                   ))}
                 </ul>

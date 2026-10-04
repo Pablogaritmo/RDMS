@@ -25,7 +25,9 @@ COPY --from=build /app/apps/api/dist ./dist
 COPY --from=build /app/apps/api/drizzle ./drizzle
 COPY --from=build /app/apps/web/dist ./web/dist
 
-RUN addgroup -S rdms && adduser -S rdms -G rdms
+RUN addgroup -S rdms && adduser -S rdms -G rdms && mkdir -p /app/uploads && chown -R rdms:rdms /app/uploads
+ENV UPLOAD_DIR=/app/uploads
+VOLUME ["/app/uploads"]
 USER rdms
 
 EXPOSE 3000

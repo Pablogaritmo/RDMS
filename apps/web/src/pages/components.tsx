@@ -9,17 +9,19 @@ import { useProject } from '@/hooks/use-project';
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { COMPONENT_STATUSES, estimatedCost, isDone, MATERIAL_STATUSES, PRIORITIES, type Component } from '@rdms/shared';
-import { Ban, ChevronDown, Clock, Filter, Plus, Search, TriangleAlert, X } from 'lucide-react';
+import { Ban, ChevronDown, Clock, Factory, Filter, GitFork, Plus, Search, TriangleAlert, X } from 'lucide-react';
 import * as React from 'react';
 import { useSearchParams } from 'react-router';
 import { formatMoney } from '@/lib/format';
 
-type Flag = 'overdue' | 'blocked' | 'due_soon' | 'open' | 'done';
-const FLAGS: { key: Flag; label: string; icon?: React.ComponentType<{ className?: string }> }[] = [
+type Flag = 'overdue' | 'blocked' | 'blocking' | 'due_soon' | 'open' | 'done' | 'workshop';
+const FLAGS: { key: Flag; label: string; icon?: React.ComponentType<{ className?: string }>; title?: string }[] = [
   { key: 'open', label: 'Abiertos' },
   { key: 'overdue', label: 'Atrasados', icon: TriangleAlert },
   { key: 'blocked', label: 'Bloqueados', icon: Ban },
+  { key: 'blocking', label: 'Cuellos de botella', icon: GitFork, title: 'Componentes que bloquean a otros, ordenados por cuántos bloquean' },
   { key: 'due_soon', label: 'Vencen pronto', icon: Clock },
+  { key: 'workshop', label: 'Taller', icon: Factory, title: 'Pendientes o en fabricación' },
   { key: 'done', label: 'Completados' },
 ];
 
@@ -68,6 +70,8 @@ export function ComponentsPage() {
       if (before && (!c.dueDate || c.dueDate > before)) return false;
       if (flag === 'overdue' && !data.isOverdue(c)) return false;
       if (flag === 'blocked' && !data.isBlocked(c)) return false;
+      if (flag === 'blocking' && (data.blocking.get(c.id)?.blocking.length ?? 0) === 0) return false;
+      if (flag === 'workshop' && !['pending_manufacturing', 'in_manufacturing'].includes(c.status)) return false;
       if (flag === 'due_soon' && !data.isDueSoon(c)) return false;
       if (flag === 'open' && isDone(c)) return false;
       if (flag === 'done' && !isDone(c)) return false;
@@ -173,6 +177,7 @@ export function ComponentsPage() {
               <button
                 key={f.key}
                 type="button"
+                title={f.title}
                 onClick={() => update('flag', active ? null : f.key)}
                 className={cn(
                   'inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs transition-colors cursor-pointer hover:bg-accent',
@@ -203,7 +208,9 @@ export function ComponentsPage() {
       </div>
 
       <ComponentTable
+        key={flag ?? 'all'}
         components={filtered}
+        defaultSort={flag === 'blocking' ? { key: 'blocking', dir: 'desc' } : flag === 'overdue' || flag === 'due_soon' ? { key: 'dueDate', dir: 'asc' } : undefined}
         emptyTitle={components.length === 0 ? 'Todavía no hay componentes' : 'Ningún componente coincide con los filtros'}
         emptyDescription={components.length === 0 ? 'Crea el primer componente del cohete: una pieza, un ensamble o una tarea de ingeniería.' : undefined}
         emptyAction={

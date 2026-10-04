@@ -10,26 +10,39 @@ import { buildAlerts, workOrder } from '@/lib/alerts';
 import { formatDate, formatHours, formatMoney, pct } from '@/lib/format';
 import { useActivity } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import { daysBetween, estimatedCost, isDone, summarizeComponents } from '@rdms/shared';
+import { daysBetween, estimatedCost, isDone, purchaseRisks, purchasesForComponents, summarizeComponents } from '@rdms/shared';
 import { AlertTriangle, ArrowRight, CheckCircle2, Info, Plus } from 'lucide-react';
 import * as React from 'react';
 import { Link, useNavigate } from 'react-router';
 
 export function DashboardPage() {
   const data = useProject();
-  const { project, components, systems, milestones, blocking, today, user, isMine, usersById, canCreateIn } = data;
+  const { project, components, systems, milestones, blocking, today, user, isMine, usersById, canCreateIn, purchases } = data;
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = React.useState(false);
   const activity = useActivity(project.id, { limit: 8 });
 
-  const summary = React.useMemo(() => summarizeComponents(components, blocking, today), [components, blocking, today]);
+  const summary = React.useMemo(() => summarizeComponents(components, blocking, today, purchases), [components, blocking, today, purchases]);
   const alerts = React.useMemo(() => buildAlerts(data), [data]);
   const mine = React.useMemo(() => components.filter((c) => isMine(c) && !isDone(c)).sort(workOrder(data)), [components, isMine, data]);
   const mineOverdue = mine.filter(data.isOverdue).length;
   const mineBlocked = mine.filter(data.isBlocked).length;
   const mineSoon = mine.filter(data.isDueSoon).length;
-
   const base = `/p/${project.id}/components`;
+  const notices = React.useMemo(() => {
+    const out: { id: string; text: string; href: string; tone: 'danger' | 'warning' | 'info' }[] = [];
+    const mineIds = new Set(mine.map((c) => c.id));
+    for (const c of mine.filter((c) => c.status === 'inspection')) out.push({ id: `insp-${c.id}`, tone: 'info', text: `${c.code} espera inspección.`, href: `${base}/${c.id}` });
+    for (const r of purchaseRisks(purchases, data.componentsById, today).filter((r) => mineIds.has(r.component.id) || r.purchase.requestedById === user.id).slice(0, 3)) {
+      out.push({ id: `pr-${r.purchase.id}-${r.component.id}`, tone: 'danger', text: r.reason === 'late' ? `${r.purchase.name} llega tarde para ${r.component.code}.` : `Falta pedir ${r.purchase.name} para ${r.component.code}.`, href: `/p/${project.id}/purchases` });
+    }
+    for (const c of mine.filter((c) => data.isBlocked(c)).slice(0, 3)) {
+      const by = blocking.get(c.id)?.blockedBy.map((id) => data.componentsById.get(id)?.code).filter(Boolean).join(', ');
+      out.push({ id: `blk-${c.id}`, tone: 'warning', text: `${c.code} está bloqueado por ${by}.`, href: `${base}/${c.id}` });
+    }
+    return out;
+  }, [mine, purchases, data, today, user.id, base, project.id, blocking]);
+
   const daysLeft = project.targetDate ? daysBetween(today, project.targetDate) : null;
   const nextMilestone = milestones.filter((m) => !m.completedAt && m.date >= today)[0];
   const budget = project.budget ?? 0;
@@ -89,16 +102,16 @@ export function DashboardPage() {
 
       {/* KPIs */}
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Stat label="Componentes" value={summary.total} hint={`${summary.completed} completados`} onClick={() => navigate(base)} />
+        <Stat label="Componentes" value={summary.total} hint={`${summary.completed} completados · ${summary.critical} críticos abiertos`} onClick={() => navigate(base)} />
         <Stat label="Atrasados" value={summary.overdue} tone={summary.overdue ? 'danger' : 'default'} hint={summary.dueSoon ? `${summary.dueSoon} vencen pronto` : 'ninguno vence pronto'} onClick={() => navigate(`${base}?flag=overdue`)} />
         <Stat label="Bloqueados" value={summary.blocked} tone={summary.blocked ? 'danger' : 'default'} hint={summary.bottlenecks ? `${summary.bottlenecks} cuellos de botella` : 'sin cuellos de botella'} onClick={() => navigate(`${base}?flag=blocked`)} />
         <Stat label="En fabricación" value={summary.inManufacturing} tone="info" hint={`${summary.pendingManufacturing} pendientes de fabricar`} onClick={() => navigate(`${base}?status=in_manufacturing`)} />
         <Stat label="Pendientes de diseño" value={summary.pendingDesign} hint={`${summary.inspection} en inspección`} onClick={() => navigate(`${base}?status=idea,design`)} />
-        <Stat label="Presupuesto" value={formatMoney(project.budget, project.currency, { compact: true })} hint={project.budget ? `${pct(estPct)} estimado` : 'sin definir'} />
-        <Stat label="Gastado" value={formatMoney(spent, project.currency, { compact: true })} tone={spentPct > 100 ? 'danger' : 'default'} hint={project.budget ? `${pct(spentPct)} del presupuesto` : undefined} />
-        <Stat label="Costo estimado" value={formatMoney(summary.costs.estimated, project.currency, { compact: true })} tone={project.budget && summary.costs.estimated > project.budget ? 'danger' : 'default'} hint={`${formatMoney(summary.costs.remainingEstimate, project.currency, { compact: true })} por ejecutar`} />
-        <Stat label="Horas de taller" value={formatHours(summary.workshopHours)} hint={`${formatHours(summary.pendingWorkshopHours)} pendientes`} />
-        <Stat label="Críticos abiertos" value={summary.critical} tone={summary.critical ? 'warning' : 'default'} onClick={() => navigate(`${base}?priority=critical`)} />
+        <Stat label="Presupuesto" value={formatMoney(project.budget, project.currency, { compact: true })} hint={project.budget ? `${pct(estPct)} estimado` : 'sin definir'} onClick={() => navigate(`/p/${project.id}/budget`)} />
+        <Stat label="Gastado" value={formatMoney(spent, project.currency, { compact: true })} tone={spentPct > 100 ? 'danger' : 'default'} hint={project.budget ? `${pct(spentPct)} del presupuesto` : undefined} onClick={() => navigate(`/p/${project.id}/budget`)} />
+        <Stat label="Comprometido" value={formatMoney(summary.costs.committed, project.currency, { compact: true })} tone="info" hint={`${formatMoney(summary.costs.planned, project.currency, { compact: true })} por comprar`} onClick={() => navigate(`/p/${project.id}/purchases`)} />
+        <Stat label="Costo estimado" value={formatMoney(summary.costs.estimated, project.currency, { compact: true })} tone={project.budget && summary.costs.estimated > project.budget ? 'danger' : 'default'} hint={`${formatMoney(summary.costs.remainingEstimate, project.currency, { compact: true })} por ejecutar`} onClick={() => navigate(`/p/${project.id}/budget`)} />
+        <Stat label="Horas de taller" value={formatHours(summary.workshopHours)} hint={`${formatHours(summary.pendingWorkshopHours)} pendientes`} onClick={() => navigate(`/p/${project.id}/manufacturing`)} />
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -117,6 +130,17 @@ export function DashboardPage() {
               </Link>
             </div>
           </div>
+          {notices.length ? (
+            <ul className="flex flex-col gap-1">
+              {notices.slice(0, 4).map((n) => (
+                <li key={n.id}>
+                  <Link to={n.href} className={cn('block rounded-md border px-3 py-1.5 text-xs hover:brightness-95', n.tone === 'danger' && 'border-red-200 bg-red-50 text-red-800', n.tone === 'warning' && 'border-amber-200 bg-amber-50 text-amber-800', n.tone === 'info' && 'border-sky-200 bg-sky-50 text-sky-800')}>
+                    {n.text}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <ComponentTable
             components={mine.slice(0, 8)}
             dense
@@ -163,7 +187,7 @@ export function DashboardPage() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {systems.map((s) => {
             const comps = components.filter((c) => c.systemId === s.id);
-            const sum = summarizeComponents(comps, blocking, today);
+            const sum = summarizeComponents(comps, blocking, today, purchasesForComponents(new Set(comps.map((c) => c.id)), purchases), false);
             const est = comps.reduce((acc, c) => acc + estimatedCost(c), 0);
             const lead = s.members.find((m) => m.role === 'lead');
             return (

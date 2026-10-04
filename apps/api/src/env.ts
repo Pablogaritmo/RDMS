@@ -10,6 +10,9 @@ export const env = {
   ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ?? 'admin1234',
   ADMIN_NAME: process.env.ADMIN_NAME ?? 'Administrador',
   SEED_DEMO: bool(process.env.SEED_DEMO, true),
+  /** Directory where uploaded files are stored (mount a volume in production). */
+  UPLOAD_DIR: process.env.UPLOAD_DIR ?? 'uploads',
+  MAX_FILE_SIZE_MB: Number(process.env.MAX_FILE_SIZE_MB ?? 50),
   get isProd() {
     return this.NODE_ENV === 'production';
   },

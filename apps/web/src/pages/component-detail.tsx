@@ -1,9 +1,13 @@
 import { ActivityFeed } from '@/components/domain/activity-feed';
 import { BlockedBadge, DueSoonBadge, OverdueBadge, PriorityBadge, StatusBadge } from '@/components/domain/badges';
 import { ComponentFormDialog } from '@/components/domain/component-form';
+import { FilesCard } from '@/components/domain/files-card';
+import { InspectionDialog, InspectionResultBadge } from '@/components/domain/inspection-dialog';
 import { ManufacturingDialog } from '@/components/domain/manufacturing-form';
 import { ComponentPicker, UserPicker } from '@/components/domain/pickers';
+import { PurchaseDialog, PurchaseStatusBadge } from '@/components/domain/purchase-form';
 import { StatusChanger } from '@/components/domain/status-changer';
+import { TestDialog, TestStatusBadge } from '@/components/domain/test-form';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,8 +18,8 @@ import { useProject } from '@/hooks/use-project';
 import { dueLabel, formatDate, formatDateTime, formatHours, formatMoney, formatNumber } from '@/lib/format';
 import { useCollaboratorMutation, useComponentActivity, useDeleteComponent, useDependencyMutation, useUpdateComponent } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import { estimatedCost, isDone, MANUFACTURING_PROCESSES, manufacturingMinutes, MATERIAL_STATUSES, STATUS_BY_KEY, statusOrder, type Component } from '@rdms/shared';
-import { ArrowLeft, Ban, Factory, GitFork, Link2, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { componentRealCost, COST_CATEGORIES, estimatedCost, isDone, MANUFACTURING_PROCESSES, manufacturingMinutes, MATERIAL_STATUSES, purchaseArrival, purchaseTotal, STATUS_BY_KEY, statusOrder, type Component, type Purchase, type Test } from '@rdms/shared';
+import { ArrowLeft, Ban, ClipboardCheck, Factory, FlaskConical, GitFork, Link2, MoreHorizontal, Pencil, Plus, ShoppingCart, Trash2, X } from 'lucide-react';
 import * as React from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
@@ -23,7 +27,7 @@ import { toast } from 'sonner';
 export function ComponentDetailPage() {
   const { componentId = '' } = useParams();
   const data = useProject();
-  const { project, componentsById, systemsById, usersById, members, blocking, canEdit, canManageSystem, isOverdue, isDueSoon, today } = data;
+  const { project, componentsById, systemsById, usersById, members, blocking, canEdit, canManageSystem, isOverdue, isDueSoon, today, purchases, tests, inspections } = data;
   const navigate = useNavigate();
   const component = componentsById.get(componentId);
 
@@ -31,6 +35,9 @@ export function ComponentDetailPage() {
   const [editSection, setEditSection] = React.useState<'general' | 'material' | 'costs'>('general');
   const [manufOpen, setManufOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [inspectOpen, setInspectOpen] = React.useState(false);
+  const [purchaseOpen, setPurchaseOpen] = React.useState<Purchase | null | 'new'>(null);
+  const [testOpen, setTestOpen] = React.useState<Test | null | 'new'>(null);
 
   const activity = useComponentActivity(project.id, componentId);
   const update = useUpdateComponent(project.id);
@@ -67,6 +74,11 @@ export function ComponentDetailPage() {
   const dependents = component.dependents.map((id) => componentsById.get(id)).filter((c): c is Component => !!c);
   const m = component.manufacturing;
   const manufMinutes = manufacturingMinutes(m);
+  const linkedPurchases = purchases.filter((p) => p.componentIds.includes(component.id));
+  const linkedTests = tests.filter((t) => t.componentId === component.id);
+  const componentInspections = inspections.filter((i) => i.componentId === component.id);
+  const realCost = componentRealCost(component, purchases);
+  const canInspect = !done || component.status === 'completed';
 
   const openEdit = (section: 'general' | 'material' | 'costs') => {
     setEditSection(section);
@@ -107,6 +119,11 @@ export function ComponentDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {canInspect ? (
+              <Button variant={component.status === 'inspection' ? 'default' : 'outline'} onClick={() => setInspectOpen(true)}>
+                <ClipboardCheck /> Inspeccionar
+              </Button>
+            ) : null}
             {editable ? (
               <Button variant="outline" onClick={() => openEdit('general')}>
                 <Pencil /> Editar
@@ -241,24 +258,26 @@ export function ComponentDetailPage() {
               <div className="rounded-md border bg-muted/30 p-3 text-sm">
                 <table className="w-full text-xs">
                   <tbody>
-                    <CostRow label="Material" value={component.estMaterialCost} currency={project.currency} />
-                    <CostRow label="Manufactura" value={component.estManufacturingCost} currency={project.currency} />
-                    <CostRow label="Compra" value={component.estPurchaseCost} currency={project.currency} />
-                    <CostRow label="Otros" value={component.estOtherCost} currency={project.currency} />
+                    {COST_CATEGORIES.map((cat) => (
+                      <CostRow key={cat.key} label={cat.label} value={component[cat.key]} currency={project.currency} />
+                    ))}
                     <tr className="border-t">
                       <td className="pt-2 font-medium">Estimado total</td>
                       <td className="pt-2 text-right font-semibold tabular">{formatMoney(est, project.currency)}</td>
                     </tr>
                     <tr>
-                      <td className="pt-1 font-medium">Costo real</td>
-                      <td className={cn('pt-1 text-right font-semibold tabular', component.actualCost != null && component.actualCost > est && est > 0 && 'text-red-600')}>{formatMoney(component.actualCost, project.currency)}</td>
+                      <td className="pt-1 font-medium">
+                        Costo real
+                        {component.actualCost == null && realCost != null ? <span className="ml-1 font-normal text-muted-foreground">(compras recibidas)</span> : null}
+                      </td>
+                      <td className={cn('pt-1 text-right font-semibold tabular', realCost != null && realCost > est && est > 0 && 'text-red-600')}>{formatMoney(realCost, project.currency)}</td>
                     </tr>
-                    {component.actualCost != null && est > 0 ? (
+                    {realCost != null && est > 0 ? (
                       <tr>
                         <td className="pt-1 text-muted-foreground">Variación</td>
-                        <td className={cn('pt-1 text-right tabular', component.actualCost > est ? 'text-red-600' : 'text-emerald-600')}>
-                          {component.actualCost >= est ? '+' : ''}
-                          {Math.round(((component.actualCost - est) / est) * 100)}%
+                        <td className={cn('pt-1 text-right tabular', realCost > est ? 'text-red-600' : 'text-emerald-600')}>
+                          {realCost >= est ? '+' : ''}
+                          {Math.round(((realCost - est) / est) * 100)}%
                         </td>
                       </tr>
                     ) : null}
@@ -316,6 +335,78 @@ export function ComponentDetailPage() {
                 </dl>
               ) : (
                 <p className="text-xs text-muted-foreground">Sin información de manufactura. {editable ? 'Regístrala si esta pieza se fabrica en el taller.' : ''}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <FilesCard entityType="component" entityId={component.id} canEdit={editable} description="Planos, CAD, datasheets, fotos y documentos de fabricación de este componente." />
+
+          {/* Compras */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShoppingCart className="size-4 text-muted-foreground" /> Compras
+                {linkedPurchases.length && linkedPurchases.some((p) => purchaseTotal(p) > 0) ? <span className="text-xs font-normal text-muted-foreground">{formatMoney(linkedPurchases.reduce((a, p) => a + purchaseTotal(p), 0), project.currency)}</span> : null}
+              </CardTitle>
+              <Button variant="ghost" size="xs" onClick={() => setPurchaseOpen('new')}>
+                <Plus /> Nueva compra
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {linkedPurchases.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Sin compras asociadas. Registra aquí lo que haya que comprar para esta pieza; el sistema avisará si la entrega choca con la fecha límite.</p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {linkedPurchases.map((p) => {
+                    const arrival = purchaseArrival(p, today);
+                    const late = !!arrival && !!component.dueDate && !done && p.status !== 'received' && arrival > component.dueDate;
+                    return (
+                      <li key={p.id} className={cn('flex flex-wrap items-center gap-2 rounded-md border px-2 py-1.5 text-xs', late && 'border-red-200 bg-red-50')}>
+                        <button type="button" className="min-w-0 flex-1 truncate text-left font-medium hover:underline cursor-pointer" onClick={() => setPurchaseOpen(p)}>
+                          {p.name}
+                        </button>
+                        <span className="text-muted-foreground">{p.supplier}</span>
+                        <PurchaseStatusBadge status={p.status} />
+                        <span className="tabular">{formatMoney(purchaseTotal(p), project.currency)}</span>
+                        {arrival && p.status !== 'received' ? <span className={cn('text-muted-foreground', late && 'font-medium text-red-700')}>llega {formatDate(arrival)}</span> : null}
+                        {p.status === 'received' ? <span className="text-muted-foreground">recibido {formatDate(p.receivedAt)}</span> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Pruebas */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FlaskConical className="size-4 text-muted-foreground" /> Pruebas
+              </CardTitle>
+              <Button variant="ghost" size="xs" onClick={() => setTestOpen('new')}>
+                <Plus /> Nueva prueba
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {linkedTests.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Sin pruebas registradas para este componente.</p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {linkedTests.map((t) => (
+                    <li key={t.id} className="flex flex-wrap items-center gap-2 rounded-md border px-2 py-1.5 text-xs">
+                      <Link to={`/p/${project.id}/tests?test=${t.id}`} className="min-w-0 flex-1 truncate font-medium hover:underline">
+                        {t.name}
+                      </Link>
+                      {t.type ? <span className="text-muted-foreground">{t.type}</span> : null}
+                      <TestStatusBadge status={t.status} />
+                      <span className="text-muted-foreground">{formatDate(t.date)}</span>
+                      <button type="button" className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer" onClick={() => setTestOpen(t)} aria-label="Editar prueba">
+                        <Pencil className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>
@@ -390,10 +481,42 @@ export function ComponentDetailPage() {
                 </Row>
                 <Row label="Diseño aprobado">{component.designApprovedAt ? formatDate(component.designApprovedAt) : <span className="text-muted-foreground">pendiente</span>}</Row>
                 <Row label="Notas">{component.designNotes ? <p className="whitespace-pre-wrap text-xs">{component.designNotes}</p> : <span className="text-muted-foreground">—</span>}</Row>
-                <Row label="Archivos">
-                  <span className="text-xs text-muted-foreground">CAD, planos y fotos llegan en la fase 3.</span>
-                </Row>
               </dl>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ClipboardCheck className="size-4 text-muted-foreground" /> Inspecciones
+              </CardTitle>
+              {canInspect ? (
+                <Button variant="ghost" size="xs" onClick={() => setInspectOpen(true)}>
+                  <Plus /> Registrar
+                </Button>
+              ) : null}
+            </CardHeader>
+            <CardContent>
+              {componentInspections.length === 0 ? (
+                <p className="text-xs text-muted-foreground">{component.status === 'inspection' ? 'Esta pieza espera inspección: registra el resultado y el estado se actualizará solo.' : 'Sin inspecciones registradas.'}</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {componentInspections.map((i) => (
+                    <li key={i.id} className="rounded-md border px-2.5 py-2 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <InspectionResultBadge result={i.result} />
+                        <span className="text-muted-foreground">
+                          {formatDate(i.date)} · {i.inspectorId ? (usersById.get(i.inspectorId)?.name ?? '—') : '—'}
+                        </span>
+                      </div>
+                      {i.observations ? <p className="mt-1 text-muted-foreground">{i.observations}</p> : null}
+                      <div className="mt-1.5">
+                        <FilesCard entityType="inspection" entityId={i.id} canEdit={editable || i.inspectorId === data.user.id} title="Fotos" defaultCategory="photo" compact />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
 
@@ -410,6 +533,9 @@ export function ComponentDetailPage() {
 
       <ComponentFormDialog open={editOpen} onOpenChange={setEditOpen} component={component} section={editSection} />
       <ManufacturingDialog open={manufOpen} onOpenChange={setManufOpen} component={component} />
+      <InspectionDialog open={inspectOpen} onOpenChange={setInspectOpen} component={component} />
+      <PurchaseDialog open={purchaseOpen !== null} onOpenChange={(o) => !o && setPurchaseOpen(null)} purchase={purchaseOpen === 'new' ? null : purchaseOpen} defaultComponentIds={[component.id]} />
+      <TestDialog open={testOpen !== null} onOpenChange={(o) => !o && setTestOpen(null)} test={testOpen === 'new' ? null : testOpen} defaultComponentId={component.id} defaultSystemId={component.systemId} />
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent size="sm">
           <DialogHeader>

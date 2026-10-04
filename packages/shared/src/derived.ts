@@ -1,5 +1,5 @@
-import { DUE_SOON_DAYS, isDoneStatus, STATUS_BY_KEY, statusOrder, type ComponentStatus } from './constants.js';
-import type { Component, Manufacturing } from './types.js';
+import { DUE_SOON_DAYS, isDoneStatus, MANUFACTURING_PROCESSES, STATUS_BY_KEY, statusOrder, type ComponentStatus } from './constants.js';
+import type { Component, Manufacturing, Purchase } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Pure helpers. Everything here is DERIVED from stored data and never persisted.
@@ -127,30 +127,127 @@ export function wouldCreateCycle(
 
 // ---------------------------------------------------------------------------
 // Costs
+//
+//  estimated  = Σ component estimates (material + manufactura + envío + adicionales)
+//  committed  = Σ purchases ordered / in transit (money promised, not yet spent)
+//  planned    = Σ purchases still "to buy"
+//  spent      = Σ component real cost  +  Σ received purchases not linked to any component
+//  component real cost = actualCost if typed, otherwise the sum of its received purchases
 // ---------------------------------------------------------------------------
 
-export function estimatedCost(c: Pick<Component, 'estMaterialCost' | 'estManufacturingCost' | 'estPurchaseCost' | 'estOtherCost'>): number {
-  return (c.estMaterialCost ?? 0) + (c.estManufacturingCost ?? 0) + (c.estPurchaseCost ?? 0) + (c.estOtherCost ?? 0);
+export function estimatedCost(c: Pick<Component, 'estMaterialCost' | 'estManufacturingCost' | 'estShippingCost' | 'estAdditionalCost'>): number {
+  return (c.estMaterialCost ?? 0) + (c.estManufacturingCost ?? 0) + (c.estShippingCost ?? 0) + (c.estAdditionalCost ?? 0);
+}
+
+export function purchaseTotal(p: Pick<Purchase, 'quantity' | 'unitCost' | 'shippingCost' | 'additionalCost'>): number {
+  return (p.quantity ?? 0) * (p.unitCost ?? 0) + (p.shippingCost ?? 0) + (p.additionalCost ?? 0);
+}
+
+export const PURCHASE_OPEN_STATUSES = ['to_buy', 'ordered', 'in_transit'] as const;
+
+/** Received purchases linked to a component, summed. */
+export function linkedReceivedPurchases(componentId: string, purchases: Purchase[]): number {
+  let sum = 0;
+  for (const p of purchases) if (p.status === 'received' && p.componentIds.includes(componentId)) sum += purchaseTotal(p);
+  return sum;
+}
+
+/** Real cost of a component: typed value, or its received purchases, or null when unknown. */
+export function componentRealCost(c: Pick<Component, 'id' | 'actualCost'>, purchases: Purchase[]): number | null {
+  if (c.actualCost != null) return c.actualCost;
+  const linked = linkedReceivedPurchases(c.id, purchases);
+  return linked > 0 ? linked : null;
 }
 
 export interface CostSummary {
   estimated: number;
+  /** money actually spent (see rules above) */
   actual: number;
-  /** estimated cost of components that still have no actual cost */
+  /** purchases ordered or in transit */
+  committed: number;
+  /** purchases still to buy */
+  planned: number;
+  /** estimated cost of components whose real cost is still unknown */
   remainingEstimate: number;
 }
 
-export function computeCosts(components: Component[]): CostSummary {
+/**
+ * @param includeUnlinked count purchases that are not linked to any component
+ *        (true for the whole project, false when summarizing a single system)
+ */
+export function computeCosts(components: Component[], purchases: Purchase[] = [], includeUnlinked = true): CostSummary {
   let estimated = 0;
   let actual = 0;
   let remainingEstimate = 0;
+  const ids = new Set(components.map((c) => c.id));
   for (const c of components) {
     const est = estimatedCost(c);
     estimated += est;
-    if (c.actualCost != null) actual += c.actualCost;
+    const real = componentRealCost(c, purchases);
+    if (real != null) actual += real;
     else remainingEstimate += est;
   }
-  return { estimated, actual, remainingEstimate };
+  let committed = 0;
+  let planned = 0;
+  for (const p of purchases) {
+    const relevant = p.componentIds.length === 0 ? includeUnlinked : p.componentIds.some((id) => ids.has(id));
+    if (!relevant) continue;
+    const total = purchaseTotal(p);
+    if (p.status === 'ordered' || p.status === 'in_transit') committed += total;
+    else if (p.status === 'to_buy') planned += total;
+    else if (p.status === 'received' && p.componentIds.length === 0) actual += total;
+  }
+  return { estimated, actual, committed, planned, remainingEstimate };
+}
+
+/** Purchases relevant to a subset of components (linked to at least one of them). */
+export function purchasesForComponents(componentIds: Set<string>, purchases: Purchase[]): Purchase[] {
+  return purchases.filter((p) => p.componentIds.some((id) => componentIds.has(id)));
+}
+
+// ---------------------------------------------------------------------------
+// Purchases: expected arrival and criticality
+// ---------------------------------------------------------------------------
+
+/** Best-known arrival date for a purchase, or null when it cannot be estimated. */
+export function purchaseArrival(p: Purchase, today: string = todayISO()): string | null {
+  if (p.status === 'received') return p.receivedAt;
+  if (p.status === 'cancelled') return null;
+  if (p.expectedAt) return p.expectedAt;
+  if (p.leadTimeDays != null) return addDaysISO(p.orderedAt ?? today, p.leadTimeDays);
+  return null;
+}
+
+export interface PurchaseRisk {
+  purchase: Purchase;
+  component: Component;
+  arrival: string | null;
+  /** days the arrival lands after the component due date (positive = late) */
+  daysLate: number | null;
+  reason: 'late' | 'not_ordered_needed' ;
+}
+
+/**
+ * A purchase is critical when its arrival lands after the due date of a linked
+ * component, or when it is still "to buy" while a linked component already waits for it
+ * (pending manufacturing or later).
+ */
+export function purchaseRisks(purchases: Purchase[], componentsById: Map<string, Component>, today: string = todayISO()): PurchaseRisk[] {
+  const risks: PurchaseRisk[] = [];
+  for (const p of purchases) {
+    if (p.status === 'received' || p.status === 'cancelled') continue;
+    const arrival = purchaseArrival(p, today);
+    for (const id of p.componentIds) {
+      const c = componentsById.get(id);
+      if (!c || isDone(c)) continue;
+      if (arrival && c.dueDate && arrival > c.dueDate) {
+        risks.push({ purchase: p, component: c, arrival, daysLate: daysBetween(c.dueDate, arrival), reason: 'late' });
+      } else if (p.status === 'to_buy' && statusOrder(c.status) >= statusOrder('pending_manufacturing')) {
+        risks.push({ purchase: p, component: c, arrival, daysLate: null, reason: 'not_ordered_needed' });
+      }
+    }
+  }
+  return risks.sort((a, b) => (b.daysLate ?? 0) - (a.daysLate ?? 0));
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +271,7 @@ export interface ComponentsSummary extends ProgressSummary {
   pendingWorkshopHours: number;
 }
 
-export function summarizeComponents(components: Component[], blocking: Map<string, BlockInfo>, today: string = todayISO()): ComponentsSummary {
+export function summarizeComponents(components: Component[], blocking: Map<string, BlockInfo>, today: string = todayISO(), purchases: Purchase[] = [], includeUnlinkedPurchases = true): ComponentsSummary {
   const progress = computeProgress(components);
   let overdue = 0,
     dueSoon = 0,
@@ -212,7 +309,7 @@ export function summarizeComponents(components: Component[], blocking: Map<strin
     inspection,
     unassigned,
     critical,
-    costs: computeCosts(components),
+    costs: computeCosts(components, purchases, includeUnlinkedPurchases),
     workshopHours: manufacturingHours(components),
     pendingWorkshopHours: manufacturingHours(components, true),
   };
@@ -234,4 +331,40 @@ export function manufacturingHours(components: Pick<Component, 'manufacturing' |
     minutes += manufacturingMinutes(c.manufacturing) * Math.max(1, c.quantity ?? 1);
   }
   return Math.round((minutes / 60) * 10) / 10;
+}
+
+export interface WorkshopGroup {
+  key: string;
+  label: string;
+  workshop: string | null;
+  components: Component[];
+  /** total minutes for open components (× quantity) */
+  pendingMinutes: number;
+  /** total minutes for all components (× quantity) */
+  totalMinutes: number;
+}
+
+/** Groups fabricable components by machine (fallback: process) for the workshop view. */
+export function groupByMachine(components: Component[]): WorkshopGroup[] {
+  const groups = new Map<string, WorkshopGroup>();
+  for (const c of components) {
+    const m = c.manufacturing;
+    if (!m) continue;
+    const processLabel = m.process ? (MANUFACTURING_PROCESSES.find((p) => p.key === m.process)?.label ?? m.process) : null;
+    const label = m.machine?.trim() || processLabel || 'Sin máquina asignada';
+    const key = label.toLowerCase();
+    const g = groups.get(key) ?? { key, label, workshop: m.workshop, components: [], pendingMinutes: 0, totalMinutes: 0 };
+    const minutes = manufacturingMinutes(m) * Math.max(1, c.quantity ?? 1);
+    g.components.push(c);
+    g.totalMinutes += minutes;
+    if (!isDone(c)) g.pendingMinutes += minutes;
+    if (!g.workshop && m.workshop) g.workshop = m.workshop;
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => b.pendingMinutes - a.pendingMinutes);
+}
+
+/** Components that are (or will be) fabricated: have manufacturing data or are in a manufacturing stage. */
+export function isFabricable(c: Component): boolean {
+  return !!c.manufacturing || c.status === 'pending_manufacturing' || c.status === 'in_manufacturing';
 }

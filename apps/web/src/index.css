@@ -87,3 +87,16 @@
     scrollbar-width: thin;
   }
 }
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  body {
+    background: white;
+    font-size: 11px;
+  }
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+}

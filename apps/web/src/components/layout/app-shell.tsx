@@ -6,7 +6,7 @@ import { Avatar } from '@/components/ui/misc';
 import { useProjectOptional } from '@/hooks/use-project';
 import { useLogout, useMe, useProjects } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import { Activity, Box, Calendar, Check, ChevronsUpDown, FolderKanban, KeyRound, Layers, LayoutDashboard, LogOut, Menu, Rocket, Search, Settings, Users } from 'lucide-react';
+import { Activity, BarChart3, Box, Calendar, Check, ChevronsUpDown, FileText, FlaskConical, FolderKanban, Factory, KeyRound, Layers, LayoutDashboard, LogOut, Menu, PiggyBank, Rocket, Search, Settings, ShoppingCart, Users } from 'lucide-react';
 import * as React from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router';
 import { ChangePasswordDialog } from './change-password-dialog';
@@ -161,6 +161,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         { to: `/p/${pid}/components`, label: 'Componentes', icon: Box },
         { to: `/p/${pid}/systems`, label: 'Sistemas', icon: Layers },
         { to: `/p/${pid}/schedule`, label: 'Cronograma', icon: Calendar },
+      ]
+    : [];
+  const operationsNav: NavItem[] = pid
+    ? [
+        { to: `/p/${pid}/manufacturing`, label: 'Manufactura', icon: Factory },
+        { to: `/p/${pid}/purchases`, label: 'Compras', icon: ShoppingCart },
+        { to: `/p/${pid}/tests`, label: 'Pruebas', icon: FlaskConical },
+        { to: `/p/${pid}/budget`, label: 'Presupuesto', icon: PiggyBank },
+      ]
+    : [];
+  const analysisNav: NavItem[] = pid
+    ? [
+        { to: `/p/${pid}/reports`, label: 'Reportes', icon: FileText },
+        { to: `/p/${pid}/metrics`, label: 'Métricas', icon: BarChart3 },
         { to: `/p/${pid}/activity`, label: 'Actividad', icon: Activity },
         ...(project?.canManageProject ? [{ to: `/p/${pid}/settings`, label: 'Configuración', icon: Settings }] : []),
       ]
@@ -173,8 +187,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const sidebar = (
     <div className="flex h-full flex-col gap-4 p-3">
       <ProjectSwitcher />
-      <div className="flex flex-1 flex-col gap-5 overflow-y-auto">
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
         {projectNav.length ? <NavLinks items={projectNav} /> : null}
+        {operationsNav.length ? (
+          <div>
+            <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Operación</p>
+            <NavLinks items={operationsNav} />
+          </div>
+        ) : null}
+        {analysisNav.length ? (
+          <div>
+            <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Análisis</p>
+            <NavLinks items={analysisNav} />
+          </div>
+        ) : null}
         <div>
           <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">General</p>
           <NavLinks items={globalNav} />
@@ -192,10 +218,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 border-r bg-card/60 lg:block">{sidebar}</aside>
+      <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 border-r bg-card/60 lg:block print:hidden">{sidebar}</aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur lg:hidden">
+        <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur lg:hidden print:hidden">
           <Button variant="ghost" size="icon-sm" onClick={() => setMobileOpen(true)} aria-label="Abrir menú">
             <Menu />
           </Button>
@@ -207,7 +233,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Search />
           </Button>
         </header>
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 lg:px-8 lg:py-6">{children}</main>
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 lg:px-8 lg:py-6 print:max-w-none print:p-0">{children}</main>
       </div>
 
       <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>

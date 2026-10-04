@@ -4,15 +4,21 @@ import { Skeleton } from '@/components/ui/misc';
 import { ProjectProvider } from '@/hooks/use-project';
 import { useMe, useProjects } from '@/lib/queries';
 import { ActivityPage } from '@/pages/activity';
+import { BudgetPage } from '@/pages/budget';
 import { ComponentDetailPage } from '@/pages/component-detail';
 import { ComponentsPage } from '@/pages/components';
 import { DashboardPage } from '@/pages/dashboard';
 import { LoginPage } from '@/pages/login';
+import { ManufacturingPage } from '@/pages/manufacturing';
+import { MetricsPage } from '@/pages/metrics';
 import { ProjectSettingsPage } from '@/pages/project-settings';
 import { ProjectsPage } from '@/pages/projects';
+import { PurchasesPage } from '@/pages/purchases';
+import { ReportsPage } from '@/pages/reports';
 import { SchedulePage } from '@/pages/schedule';
 import { SystemDetailPage } from '@/pages/system-detail';
 import { SystemsPage } from '@/pages/systems';
+import { TestsPage } from '@/pages/tests';
 import { UsersPage } from '@/pages/users';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
@@ -153,6 +159,12 @@ const router = createBrowserRouter([
           { path: 'systems', element: <SystemsPage /> },
           { path: 'systems/:systemId', element: <SystemDetailPage /> },
           { path: 'schedule', element: <SchedulePage /> },
+          { path: 'manufacturing', element: <ManufacturingPage /> },
+          { path: 'purchases', element: <PurchasesPage /> },
+          { path: 'budget', element: <BudgetPage /> },
+          { path: 'tests', element: <TestsPage /> },
+          { path: 'reports', element: <ReportsPage /> },
+          { path: 'metrics', element: <MetricsPage /> },
           { path: 'activity', element: <ActivityPage /> },
           { path: 'settings', element: <ProjectSettingsPage /> },
           { path: '*', element: <NotFound /> },

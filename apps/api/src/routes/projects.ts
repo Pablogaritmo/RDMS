@@ -22,6 +22,7 @@ import { uuidParam, withProject, type ProjectEnv } from '../lib/project-middlewa
 import { serializeActivity, serializeMilestone, serializeProject } from '../lib/serialize.js';
 import { loadMilestones, loadProjectBundle, loadProjectMembers, loadSystems } from '../services/projects.js';
 import { componentRoutes } from './components.js';
+import { operationRoutes } from './operations.js';
 
 const nullIfEmpty = (v: string | null | undefined) => (v && v.trim() !== '' ? v : null);
 
@@ -82,6 +83,7 @@ export const projectRoutes = new Hono<AppEnv>()
 export const projectScopedRoutes = new Hono<ProjectEnv>()
   .use('*', withProject)
   .route('/components', componentRoutes)
+  .route('/', operationRoutes)
   .get('/bundle', async (c) => c.json(await loadProjectBundle(c.var.projectId)))
   .patch('/', zValidator('json', updateProjectSchema), async (c) => {
     if (!canManageProject(c.var.access)) throw forbidden('Solo el líder del proyecto puede editarlo');
@@ -342,7 +344,7 @@ export const searchRoutes = new Hono<AppEnv>().get('/', zValidator('query', z.ob
   if (projectFilter && visible !== 'all' && !projectFilter.every((id) => visible.includes(id))) return c.json({ results: [] });
   const pattern = `%${q.replace(/[%_\\]/g, '\\$&')}%`;
 
-  const [comps, systemsRows, projectsRows, usersRows, milestonesRows] = await Promise.all([
+  const [comps, systemsRows, projectsRows, usersRows, milestonesRows, purchasesRows, filesRows] = await Promise.all([
     db
       .select({ id: schema.components.id, code: schema.components.code, name: schema.components.name, projectId: schema.components.projectId, status: schema.components.status })
       .from(schema.components)
@@ -374,12 +376,24 @@ export const searchRoutes = new Hono<AppEnv>().get('/', zValidator('query', z.ob
       .from(schema.milestones)
       .where(and(projectFilter ? inArray(schema.milestones.projectId, projectFilter) : undefined, ilike(schema.milestones.name, pattern)))
       .limit(5),
+    db
+      .select({ id: schema.purchases.id, name: schema.purchases.name, supplier: schema.purchases.supplier, status: schema.purchases.status, projectId: schema.purchases.projectId })
+      .from(schema.purchases)
+      .where(and(projectFilter ? inArray(schema.purchases.projectId, projectFilter) : undefined, or(ilike(schema.purchases.name, pattern), ilike(schema.purchases.supplier, pattern))))
+      .limit(6),
+    db
+      .select({ id: schema.files.id, name: schema.files.name, category: schema.files.category, projectId: schema.files.projectId, entityType: schema.files.entityType, entityId: schema.files.entityId })
+      .from(schema.files)
+      .where(and(projectFilter ? inArray(schema.files.projectId, projectFilter) : undefined, ilike(schema.files.name, pattern)))
+      .limit(6),
   ]);
 
   const results = [
     ...comps.map((r) => ({ type: 'component' as const, id: r.id, title: `${r.code} · ${r.name}`, subtitle: r.status, projectId: r.projectId })),
     ...systemsRows.map((r) => ({ type: 'system' as const, id: r.id, title: r.name, subtitle: r.code, projectId: r.projectId })),
     ...milestonesRows.map((r) => ({ type: 'milestone' as const, id: r.id, title: r.name, subtitle: r.date, projectId: r.projectId })),
+    ...purchasesRows.map((r) => ({ type: 'purchase' as const, id: r.id, title: r.name, subtitle: r.supplier ?? r.status, projectId: r.projectId })),
+    ...filesRows.map((r) => ({ type: 'file' as const, id: r.id, title: r.name, subtitle: r.category, projectId: r.projectId, entityType: r.entityType, entityId: r.entityId })),
     ...projectsRows.map((r) => ({ type: 'project' as const, id: r.id, title: r.name, subtitle: r.competition, projectId: r.id })),
     ...usersRows.map((r) => ({ type: 'user' as const, id: r.id, title: r.name, subtitle: r.email, projectId: null })),
   ];

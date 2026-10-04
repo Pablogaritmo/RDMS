@@ -1,11 +1,16 @@
 import { z } from 'zod';
 import {
   COMPONENT_STATUS_KEYS,
+  FILE_CATEGORY_KEYS,
+  FILE_ENTITY_TYPES,
+  INSPECTION_RESULT_KEYS,
   MANUFACTURING_PROCESS_KEYS,
   MATERIAL_STATUS_KEYS,
   MEMBERSHIP_ROLES,
   PRIORITY_KEYS,
   PROJECT_STATUS_KEYS,
+  PURCHASE_STATUS_KEYS,
+  TEST_STATUS_KEYS,
   USER_ROLES,
 } from './constants.js';
 
@@ -108,8 +113,8 @@ export const componentFieldsSchema = z.object({
   designNotes: nullableText().optional(),
   estMaterialCost: money.default(0),
   estManufacturingCost: money.default(0),
-  estPurchaseCost: money.default(0),
-  estOtherCost: money.default(0),
+  estShippingCost: money.default(0),
+  estAdditionalCost: money.default(0),
   actualCost: money.nullable().optional(),
 });
 
@@ -145,6 +150,60 @@ export const manufacturingSchema = z.object({
   notes: nullableText().optional(),
 });
 
+// ------------------------------------------------------------------ purchases
+
+export const purchaseSchema = z.object({
+  name: text(150),
+  description: nullableText().optional(),
+  quantity: z.number().min(0).max(1_000_000).default(1),
+  unitCost: money.default(0),
+  shippingCost: money.default(0),
+  additionalCost: money.default(0),
+  supplier: nullableText(150).optional(),
+  url: nullableText(1000).optional(),
+  status: z.enum(PURCHASE_STATUS_KEYS).default('to_buy'),
+  leadTimeDays: z.number().int().min(0).max(1000).nullable().optional(),
+  orderedAt: isoDate.nullable().optional(),
+  expectedAt: isoDate.nullable().optional(),
+  receivedAt: isoDate.nullable().optional(),
+  notes: nullableText().optional(),
+  componentIds: z.array(uuid).max(100).default([]),
+});
+export const updatePurchaseSchema = purchaseSchema.partial();
+
+// ---------------------------------------------------------------- inspections
+
+export const inspectionSchema = z.object({
+  componentId: uuid,
+  date: isoDate,
+  result: z.enum(INSPECTION_RESULT_KEYS),
+  observations: nullableText().optional(),
+});
+
+// ---------------------------------------------------------------------- tests
+
+export const testSchema = z.object({
+  name: text(150),
+  type: nullableText(80).optional(),
+  systemId: uuid.nullable().optional(),
+  componentId: uuid.nullable().optional(),
+  date: isoDate.nullable().optional(),
+  responsibleId: uuid.nullable().optional(),
+  objective: nullableText().optional(),
+  result: nullableText().optional(),
+  status: z.enum(TEST_STATUS_KEYS).default('planned'),
+  observations: nullableText().optional(),
+});
+export const updateTestSchema = testSchema.partial();
+
+// ---------------------------------------------------------------------- files
+
+export const fileMetaSchema = z.object({
+  entityType: z.enum(FILE_ENTITY_TYPES),
+  entityId: uuid,
+  category: z.enum(FILE_CATEGORY_KEYS).default('other'),
+});
+
 // ----------------------------------------------------------------- milestones
 
 export const milestoneSchema = z.object({
@@ -170,3 +229,9 @@ export type UpdateComponentInput = z.infer<typeof updateComponentSchema>;
 export type ChangeStatusInput = z.infer<typeof changeStatusSchema>;
 export type ManufacturingInput = z.infer<typeof manufacturingSchema>;
 export type MilestoneInput = z.infer<typeof milestoneSchema>;
+export type PurchaseInput = z.infer<typeof purchaseSchema>;
+export type UpdatePurchaseInput = z.infer<typeof updatePurchaseSchema>;
+export type InspectionInput = z.infer<typeof inspectionSchema>;
+export type TestInput = z.infer<typeof testSchema>;
+export type UpdateTestInput = z.infer<typeof updateTestSchema>;
+export type FileMetaInput = z.infer<typeof fileMetaSchema>;

@@ -143,8 +143,8 @@ export async function createComponent(user: AuthUser, access: ProjectAccess, pro
         designNotes: input.designNotes ?? null,
         estMaterialCost: input.estMaterialCost,
         estManufacturingCost: input.estManufacturingCost,
-        estPurchaseCost: input.estPurchaseCost,
-        estOtherCost: input.estOtherCost,
+        estShippingCost: input.estShippingCost,
+        estAdditionalCost: input.estAdditionalCost,
         actualCost: input.actualCost ?? null,
         createdBy: user.id,
       })
@@ -184,7 +184,7 @@ export async function createComponent(user: AuthUser, access: ProjectAccess, pro
 const UPDATABLE_FIELDS: (keyof UpdateComponentInput)[] = [
   'systemId', 'name', 'code', 'description', 'subsystem', 'quantity', 'responsibleId', 'priority', 'startDate', 'dueDate',
   'material', 'materialQty', 'materialUnit', 'supplier', 'materialStatus', 'designerId', 'designNotes',
-  'estMaterialCost', 'estManufacturingCost', 'estPurchaseCost', 'estOtherCost', 'actualCost',
+  'estMaterialCost', 'estManufacturingCost', 'estShippingCost', 'estAdditionalCost', 'actualCost',
 ];
 
 export async function updateComponent(user: AuthUser, access: ProjectAccess, current: Component, raw: UpdateComponentInput): Promise<Component> {
@@ -204,7 +204,7 @@ export async function updateComponent(user: AuthUser, access: ProjectAccess, cur
       if (f in input) (patch as Record<string, unknown>)[f] = input[f] ?? null;
     }
     // cost defaults: never null in DB
-    for (const f of ['estMaterialCost', 'estManufacturingCost', 'estPurchaseCost', 'estOtherCost'] as const) {
+    for (const f of ['estMaterialCost', 'estManufacturingCost', 'estShippingCost', 'estAdditionalCost'] as const) {
       if (f in patch && patch[f] == null) patch[f] = 0;
     }
     if ('quantity' in patch && patch.quantity == null) patch.quantity = 1;
@@ -305,6 +305,8 @@ export async function changeStatus(user: AuthUser, access: ProjectAccess, curren
 
 export async function deleteComponent(user: AuthUser, access: ProjectAccess, current: Component) {
   if (!canManageSystem(access, current.systemId)) throw forbidden('Solo los líderes pueden eliminar componentes');
+  const { removeFilesForEntities } = await import('./files.js');
+  await removeFilesForEntities([current.id]);
   await db.transaction(async (tx) => {
     await tx.delete(schema.components).where(eq(schema.components.id, current.id));
     await logActivity(

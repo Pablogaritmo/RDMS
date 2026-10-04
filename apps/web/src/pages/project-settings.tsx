@@ -14,7 +14,7 @@ import { Flag, Pencil, Plus, Trash2, X } from 'lucide-react';
 import * as React from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { SystemEditDialog } from './system-detail';
+import { SystemEditDialog } from '@/components/domain/system-form';
 
 export function ProjectSettingsPage() {
   const { canManageProject, isAdmin } = useProject();

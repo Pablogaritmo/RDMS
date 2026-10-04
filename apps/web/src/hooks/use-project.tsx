@@ -6,11 +6,15 @@ import {
   todayISO,
   type BlockInfo,
   type Component,
+  type FileItem,
+  type Inspection,
   type Milestone,
   type Project,
   type ProjectMember,
+  type Purchase,
   type SessionUser,
   type System,
+  type Test,
   type UserSummary,
 } from '@rdms/shared';
 import * as React from 'react';
@@ -21,6 +25,10 @@ export interface ProjectData {
   systems: System[];
   components: Component[];
   milestones: Milestone[];
+  purchases: Purchase[];
+  tests: Test[];
+  inspections: Inspection[];
+  files: FileItem[];
   today: string;
   componentsById: Map<string, Component>;
   systemsById: Map<string, System>;
@@ -50,7 +58,7 @@ export function ProjectProvider({ projectId, children, fallback }: { projectId: 
 
   const value = React.useMemo<ProjectData | null>(() => {
     if (!bundle.data || !me.data) return null;
-    const { project, members, systems, components, milestones } = bundle.data;
+    const { project, members, systems, components, milestones, purchases, tests, inspections, files } = bundle.data;
     const user = me.data;
     const today = todayISO();
     const componentsById = new Map(components.map((c) => [c.id, c]));
@@ -76,6 +84,10 @@ export function ProjectProvider({ projectId, children, fallback }: { projectId: 
       systems,
       components,
       milestones,
+      purchases,
+      tests,
+      inspections,
+      files,
       today,
       componentsById,
       systemsById,

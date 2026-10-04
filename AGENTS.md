@@ -9,3 +9,7 @@
 - Toda mutación del API debe pasar por `services/` y llamar a `logActivity` (historial automático) y a las funciones `can*` de `lib/permissions.ts`.
 - `src/db/migrate.ts` y `seed.ts` son librerías; los puntos de entrada CLI son `cli-migrate.ts` / `cli-seed.ts` (el API se bundlea con esbuild, así que no uses `import.meta.url === argv[1]` dentro de módulos compartidos).
 - UI en español; identificadores en inglés. Formularios cortos: lo esencial primero, "Más campos" para el resto.
+- Categorías de costo estimado: material, manufactura, envío, adicionales (`COST_CATEGORIES` en shared). Reglas de gastado/comprometido en `computeCosts`.
+- Archivos: `services/files.ts` (StorageAdapter, disco local en `UPLOAD_DIR`). Subida multipart `POST /api/projects/:id/files` (campos `file`, `entityType`, `entityId`, `category`); descarga `GET .../files/:fileId/download`.
+- Módulos de fase 2/3 (compras, pruebas, inspecciones, archivos, métricas) viven en `routes/operations.ts` + `services/*`; en la web, páginas `manufacturing`, `purchases`, `budget`, `tests`, `reports`, `metrics`.
+- Para evitar grafos HMR rotos: no exportes componentes desde páginas para usarlos en otras páginas; ponlos en `components/domain/`.
