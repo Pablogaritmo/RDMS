@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: rdms-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rdms
+      POSTGRES_PASSWORD: rdms
+      POSTGRES_DB: rdms
+    ports:
+      - "5432:5432"
+    volumes:
+      - rdms_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rdms -d rdms"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Aplicación completa (API + SPA) para producción / demo.
+  # Uso: docker compose --profile app up -d --build
+  app:
+    build: .
+    container_name: rdms-app
+    profiles: ["app"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://rdms:rdms@db:5432/rdms
+      TRUST_PROXY: "false"
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@crater.ucr.ac.cr}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin1234}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
+      SEED_DEMO: ${SEED_DEMO:-true}
+    ports:
+      - "3000:3000"
+
+volumes:
+  rdms_pgdata:
